@@ -3,6 +3,17 @@
 Telegram-only alert bot for Pump.fun/PumpSwap graduation and momentum signals.
 It never buys or sells tokens.
 
+## Attribution
+
+This repository is an updated and maintained fork of the original QLO project
+created by [gustaffsonKotte](https://github.com/gustaffsonKotte). The original
+project and history are available at
+[github.com/gustaffsonKotte/qlo](https://github.com/gustaffsonKotte/qlo).
+
+The MIT license and original copyright notice are retained. This fork adds
+stricter migration validation, PumpSwap transfer parsing, market-data filters,
+Telegram momentum alerts, tests, and deployment documentation.
+
 Watches every bonding curve that fills on pump.fun and tells you about the
 slow ones.
 
