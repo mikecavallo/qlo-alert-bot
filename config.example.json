@@ -2,6 +2,18 @@
   "tg_token": "PUT_YOUR_BOT_TOKEN_HERE",
   "helius_key": "PUT_YOUR_HELIUS_API_KEY_HERE",
   "webhook_url": "https://your-domain.com/hook",
+  "webhook_auth": "",
   "channel": "@your_channel_or_empty_string",
-  "min_age_hours": 6
+  "min_age_hours": 6,
+  "confirmation_minutes": 5,
+  "min_5m_volume_usd": 5000,
+  "min_5m_buys": 20,
+  "min_liquidity_usd": 10000,
+  "min_buy_sell_ratio": 1.1,
+  "require_social_or_website": true,
+  "max_top_holder_percent": 20,
+  "min_momentum_volume_sol": 10,
+  "min_momentum_buys": 20,
+  "momentum_window_seconds": 300,
+  "momentum_alert_cooldown": 3600
 }

@@ -1,6 +1,7 @@
-# QLO
+# QLO Alert Bot
 
-Pump.fun graduation scanner.
+Telegram-only alert bot for Pump.fun/PumpSwap graduation and momentum signals.
+It never buys or sells tokens.
 
 Watches every bonding curve that fills on pump.fun and tells you about the
 slow ones.
@@ -24,7 +25,7 @@ It is a filter, not a crystal ball. Most of these tokens still go to zero.
 
 ## What it does
 
-1. A Helius webhook sends every pool creation on the pump.fun AMM
+1. A Helius webhook sends pool creations on the pump.fun AMM
    (PumpSwap) to your server.
 2. Pools that are not pump.fun graduations are dropped locally, with no
    API calls. That is about three quarters of the stream.
@@ -33,7 +34,32 @@ It is a filter, not a crystal ball. Most of these tokens still go to zero.
    It stops paging as soon as the threshold is reached, to save credits.
 4. If the token is older than your threshold, an alert goes to Telegram:
    ticker, name, time on the curve, contract and quick links.
-5. Optionally, only members of your Telegram channel get alerts in DM.
+5. A separate optional SWAP webhook can identify short-term momentum from
+   PumpSwap trades. It is deliberately expensive in Helius credits, so keep
+   it disabled unless you need momentum alerts.
+6. Optionally, only members of your Telegram channel get alerts in DM.
+
+### Alert gates
+
+An alert is only eligible after all of these checks pass:
+
+- Helius event type is `CREATE_POOL` and source is Pump AMM/Pump.fun.
+- The transaction succeeded and contains a confirmed Pump.fun `Migrate` or
+  `MigrateV2` instruction in its on-chain log messages.
+- The token spent at least `min_age_hours` on the bonding curve.
+- DexScreener reports the configured minimum liquidity, rolling five-minute
+  volume, and buy count.
+- Five-minute buys exceed sells by the configured ratio.
+- The token has at least one website or social link, when enabled.
+- The largest visible user owner is below `max_top_holder_percent`.
+
+Rejected candidates are recorded in `rejections.jsonl` with the reason and
+transaction signature when available. This is an alert filter, not a promise
+that a token is safe or profitable.
+
+The graduation webhook must point to `/hook`. If a SWAP webhook is used for
+future volume research, it must point to `/volume-hook`; never send SWAP
+events to `/hook`.
 
 ## Requirements
 
@@ -49,7 +75,7 @@ It is a filter, not a crystal ball. Most of these tokens still go to zero.
 ### 1. Install
 
 ```bash
-git clone https://github.com/gustaffsonKotte/qlo.git
+git clone https://github.com/mikecavallo/qlo-alert-bot.git
 cd qlo
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
@@ -80,8 +106,27 @@ all of them. The main ones:
 | Telegram token | bot token from @BotFather |
 | channel | your channel, e.g. `@your_channel` |
 | `min_age_hours` | minimum time on the curve before an alert. Default `6` |
+| `confirmation_minutes` | delay before the post-graduation market check. Default `5` |
+| `min_5m_volume_usd` | minimum rolling five-minute volume. Default `5000` |
+| `min_5m_buys` | minimum rolling five-minute buys. Default `20` |
+| `min_liquidity_usd` | minimum reported liquidity. Default `10000` |
+| `min_buy_sell_ratio` | minimum buy-to-sell ratio. Default `1.1` |
+| `require_social_or_website` | require at least one project link. Default `true` |
+| `max_top_holder_percent` | maximum visible user-owner concentration. Default `20` |
 
 Never commit `config.json`. It is already in `.gitignore`.
+
+### 3.1 Recommended starting configuration
+
+The example configuration is intentionally conservative. A token must have
+market activity, liquidity, buy pressure, and a website or social link before
+the bot sends an alert. These checks reduce noise but cannot identify scams or
+guarantee performance.
+
+For a low-credit setup, configure only the graduation webhook and leave the
+SWAP/momentum webhook disabled. For momentum alerts, use a separate Helius
+webhook pointed at `/qlo/volume-hook` and set `webhook_auth` to a long random
+secret that exactly matches the webhook authentication header.
 
 ### 4. Run behind nginx
 
@@ -152,6 +197,76 @@ curl -s https://your.domain/qlo/health
 
 You should get `{"ok": true, ...}`. The first alerts show up as soon as a
 slow token graduates. On a quiet day that can take a while.
+
+## Development and testing
+
+Run the tests before deploying changes:
+
+```bash
+venv/bin/python -m unittest -v test_app.py
+python3 -m py_compile app.py test_app.py
+```
+
+The tests cover migration verification, failed-transaction rejection,
+webhook authentication, and PumpSwap buy/sell parsing from Helius transfer
+payloads.
+
+## Troubleshooting
+
+Check service health:
+
+```bash
+curl -s http://127.0.0.1:8091/health
+systemctl status qlo --no-pager
+journalctl -u qlo -n 100 --no-pager
+```
+
+Repeated `POST /volume-hook 200 OK` lines mean Helius is delivering events;
+they are not errors. `volume.events` counts received swaps, `volume.tokens`
+counts swaps parsed with a token mint, and `volume.unparsed` counts events
+that were intentionally rejected because direction or amount was ambiguous.
+
+If DexScreener returns HTTP 403 or is unavailable, the bot should filter the
+candidate rather than send an unverified alert. Check the service journal and
+the provider response before relaxing any safety gate.
+
+To stop the process without deleting webhooks:
+
+```bash
+systemctl stop qlo
+```
+
+To conserve Helius credits, also pause the SWAP webhook in the Helius
+dashboard. Restart the service with `systemctl start qlo` when ready.
+
+## Deploying an updated copy
+
+Run the file copy from the computer that contains the repository, not from
+inside the server SSH session:
+
+```bash
+rsync -avz \
+  -e "ssh -o IdentitiesOnly=yes -i /home/mike/.ssh/codex" \
+  /home/mike/Projects/qlo/app.py \
+  /home/mike/Projects/qlo/config.example.json \
+  /home/mike/Projects/qlo/test_app.py \
+  root@YOUR_SERVER_IP:/opt/qlo/
+```
+
+On the server, run the tests and restart only after they pass:
+
+```bash
+cd /opt/qlo
+venv/bin/python -m unittest -v test_app.py
+systemctl restart qlo
+systemctl is-active qlo
+curl -s http://127.0.0.1:8091/health
+journalctl -u qlo -f
+```
+
+Keep the graduation webhook pointed at `/qlo/hook`. If the momentum webhook
+is enabled, point it at `/qlo/volume-hook` and configure its authorization
+header to the exact value of `webhook_auth`.
 
 ## Using it
 
